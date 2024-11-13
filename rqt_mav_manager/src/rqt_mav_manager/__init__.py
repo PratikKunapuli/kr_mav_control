@@ -1,4 +1,5 @@
 from __future__ import print_function
+import concurrent.futures
 
 import os
 import rospkg
@@ -45,6 +46,112 @@ class MavManagerUi(Plugin):
 
     self._widget.takeoff_push_button.pressed.connect(self._on_takeoff_pressed)
     self._widget.gohome_push_button.pressed.connect(self._on_gohome_pressed)
+
+    # Multi-Mav Buttons
+    # Craeate a list of robot names of the form: crazy00, crazy01, crazy02, etc.
+    self.robot_names = ['crazy%02d'%i for i in range(10)]
+    self._widget.motors_on_ALL_button.pressed.connect(self._on_motors_on_ALL_pressed)
+    self._widget.motors_off_ALL_button.pressed.connect(self._on_motors_off_ALL_pressed)
+    self._widget.takeoff_ALL_button.pressed.connect(self._on_takeoff_ALL_pressed)
+    self._widget.land_ALL_button.pressed.connect(self._on_land_ALL_pressed)
+    self._widget.hover_ALL_button.pressed.connect(self._on_hover_ALL_pressed)
+    self._widget.estop_ALL_button.pressed.connect(self._on_estop_ALL_pressed)
+
+  def _on_motors_on_ALL_pressed(self):
+    def turn_on_motors(robot_name):
+        try:
+            motors_topic = f'/{robot_name}/{self.mav_node_name}/motors'
+            rospy.wait_for_service(motors_topic, timeout=1.0)
+            motors_on = rospy.ServiceProxy(motors_topic, std_srvs.srv.SetBool)
+            resp = motors_on(True)
+            print(f'Motors on {robot_name}: {resp.success}')
+        except rospy.ServiceException as e:
+            print(f"Service call failed for {robot_name}: {e}")
+        except rospy.ROSException as e:
+            print(f"Service call failed for {robot_name}: {e}")
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(turn_on_motors, self.robot_names)
+  
+  def _on_motors_off_ALL_pressed(self):
+    def turn_off_motors(robot_name):
+        try:
+            motors_topic = f'/{robot_name}/{self.mav_node_name}/motors'
+            rospy.wait_for_service(motors_topic, timeout=1.0)
+            motors_off = rospy.ServiceProxy(motors_topic, std_srvs.srv.SetBool)
+            resp = motors_off(False)
+            print(f'Motors off {robot_name}: {resp.success}')
+        except rospy.ServiceException as e:
+            print(f"Service call failed for {robot_name}: {e}")
+        except rospy.ROSException as e:
+            print(f"Service call failed for {robot_name}: {e}")
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(turn_off_motors, self.robot_names)
+
+  def _on_takeoff_ALL_pressed(self):
+      def takeoff(robot_name):
+          try:
+              takeoff_topic = f'/{robot_name}/{self.mav_node_name}/takeoff'
+              rospy.wait_for_service(takeoff_topic, timeout=1.0)
+              takeoff = rospy.ServiceProxy(takeoff_topic, std_srvs.srv.Trigger)
+              resp = takeoff()
+              print(f'Takeoff {robot_name}: {resp.success}')
+          except rospy.ServiceException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+          except rospy.ROSException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+
+      with concurrent.futures.ThreadPoolExecutor() as executor:
+          executor.map(takeoff, self.robot_names)
+
+  def _on_land_ALL_pressed(self):
+      def land(robot_name):
+          try:
+              land_topic = f'/{robot_name}/{self.mav_node_name}/land'
+              rospy.wait_for_service(land_topic, timeout=1.0)
+              land = rospy.ServiceProxy(land_topic, std_srvs.srv.Trigger)
+              resp = land()
+              print(f'Land {robot_name}: {resp.success}')
+          except rospy.ServiceException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+          except rospy.ROSException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+
+      with concurrent.futures.ThreadPoolExecutor() as executor:
+          executor.map(land, self.robot_names)
+
+  def _on_hover_ALL_pressed(self):
+      def hover(robot_name):
+          try:
+              hover_topic = f'/{robot_name}/{self.mav_node_name}/hover'
+              rospy.wait_for_service(hover_topic, timeout=1.0)
+              hover = rospy.ServiceProxy(hover_topic, std_srvs.srv.Trigger)
+              resp = hover()
+              print(f'Hover {robot_name}: {resp.success}')
+          except rospy.ServiceException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+          except rospy.ROSException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+
+      with concurrent.futures.ThreadPoolExecutor() as executor:
+          executor.map(hover, self.robot_names)
+
+  def _on_estop_ALL_pressed(self):
+      def estop(robot_name):
+          try:
+              estop_topic = f'/{robot_name}/{self.mav_node_name}/estop'
+              rospy.wait_for_service(estop_topic, timeout=1.0)
+              estop = rospy.ServiceProxy(estop_topic, std_srvs.srv.Trigger)
+              resp = estop()
+              print(f'Estop {robot_name}: {resp.success}')
+          except rospy.ServiceException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+          except rospy.ROSException as e:
+              print(f"Service call failed for {robot_name}: {e}")
+
+      with concurrent.futures.ThreadPoolExecutor() as executor:
+          executor.map(estop, self.robot_names)
 
   def _on_robot_name_changed(self, robot_name):
       self.robot_name = str(robot_name)
