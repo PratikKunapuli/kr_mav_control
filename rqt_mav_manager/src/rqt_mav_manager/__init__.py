@@ -61,7 +61,7 @@ class MavManagerUi(Plugin):
     def turn_on_motors(robot_name):
         try:
             motors_topic = f'/{robot_name}/{self.mav_node_name}/motors'
-            rospy.wait_for_service(motors_topic, timeout=1.0)
+            rospy.wait_for_service(motors_topic, timeout=0.1)
             motors_on = rospy.ServiceProxy(motors_topic, std_srvs.srv.SetBool)
             resp = motors_on(True)
             print(f'Motors on {robot_name}: {resp.success}')
@@ -77,7 +77,7 @@ class MavManagerUi(Plugin):
     def turn_off_motors(robot_name):
         try:
             motors_topic = f'/{robot_name}/{self.mav_node_name}/motors'
-            rospy.wait_for_service(motors_topic, timeout=1.0)
+            rospy.wait_for_service(motors_topic, timeout=0.1)
             motors_off = rospy.ServiceProxy(motors_topic, std_srvs.srv.SetBool)
             resp = motors_off(False)
             print(f'Motors off {robot_name}: {resp.success}')
@@ -93,7 +93,7 @@ class MavManagerUi(Plugin):
       def takeoff(robot_name):
           try:
               takeoff_topic = f'/{robot_name}/{self.mav_node_name}/takeoff'
-              rospy.wait_for_service(takeoff_topic, timeout=1.0)
+              rospy.wait_for_service(takeoff_topic, timeout=0.1)
               takeoff = rospy.ServiceProxy(takeoff_topic, std_srvs.srv.Trigger)
               resp = takeoff()
               print(f'Takeoff {robot_name}: {resp.success}')
@@ -109,7 +109,7 @@ class MavManagerUi(Plugin):
       def land(robot_name):
           try:
               land_topic = f'/{robot_name}/{self.mav_node_name}/land'
-              rospy.wait_for_service(land_topic, timeout=1.0)
+              rospy.wait_for_service(land_topic, timeout=0.1)
               land = rospy.ServiceProxy(land_topic, std_srvs.srv.Trigger)
               resp = land()
               print(f'Land {robot_name}: {resp.success}')
@@ -125,7 +125,7 @@ class MavManagerUi(Plugin):
       def hover(robot_name):
           try:
               hover_topic = f'/{robot_name}/{self.mav_node_name}/hover'
-              rospy.wait_for_service(hover_topic, timeout=1.0)
+              rospy.wait_for_service(hover_topic, timeout=0.1)
               hover = rospy.ServiceProxy(hover_topic, std_srvs.srv.Trigger)
               resp = hover()
               print(f'Hover {robot_name}: {resp.success}')
@@ -141,7 +141,7 @@ class MavManagerUi(Plugin):
       def estop(robot_name):
           try:
               estop_topic = f'/{robot_name}/{self.mav_node_name}/estop'
-              rospy.wait_for_service(estop_topic, timeout=1.0)
+              rospy.wait_for_service(estop_topic, timeout=0.1)
               estop = rospy.ServiceProxy(estop_topic, std_srvs.srv.Trigger)
               resp = estop()
               print(f'Estop {robot_name}: {resp.success}')
