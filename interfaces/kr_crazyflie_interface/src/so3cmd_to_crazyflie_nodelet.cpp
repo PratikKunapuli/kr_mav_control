@@ -11,6 +11,8 @@
 #include <nav_msgs/Odometry.h>
 #include <nodelet/nodelet.h>
 #include <ros/ros.h>
+#include <crazyflie_driver/sendPacket.h>  // Service definition for sendPacket
+#include <crazyflie_driver/crtpPacket.h>  // Message definition for crtpPacket
 
 #include <Eigen/Geometry>
 
@@ -25,6 +27,7 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
  private:
+  void send_arming_request(bool arm);
   void so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr &msg);
   void odom_callback(const nav_msgs::Odometry::ConstPtr &odom);
 
@@ -36,6 +39,8 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
 
   ros::Subscriber so3_cmd_sub_;
   ros::Subscriber odom_sub_;
+
+  ros::ServiceClient arm_client_;  // Service client to send packets
 
   double so3_cmd_timeout_;
   ros::Time last_so3_cmd_time_;
@@ -52,6 +57,45 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
   int thrust_pwm_max_;  // Mapped to PWM
 
   int motor_status_;
+  bool armed_;
+  int arm_status_;
+};
+
+void SO3CmdToCrazyflie::send_arming_request(bool arm)
+{
+  ROS_INFO("Setting arm to: %d", arm);
+  
+  // Create a packet to arm or disarm
+  // crazyflie_driver::crtpPacket packet;
+  // packet.header = 0x0D;
+  // packet.size = 1;  // Payload length is 1 byte for arm/disarm
+  // // Clear the data array before populating it
+  // std::fill(packet.data.begin(), packet.data.end(), 0);
+  // // Set the payload (1 byte for arm or disarm)
+  // packet.data[0] = arm ? 1 : 0;  // 1 for arm, 0 for disarm
+
+  // Create a custom packet for arming/disarming
+  crazyflie_driver::crtpPacket packet;
+  packet.header = 220;  // Same as 13 in decimal
+  packet.size = 2;  // Payload length of 2 bytes
+  // Set the first byte of the payload to 1 (indicating the arming/disarming operation)
+  packet.data[0] = 1;
+  // Set the second byte to arm/disarm (1 for arm, 0 for disarm)
+  packet.data[1] = arm ? 1 : 0;
+
+  // Call the sendPacket service to send the packet
+  crazyflie_driver::sendPacket srv;
+  srv.request.packet = packet;
+
+  if (arm_client_.call(srv))
+  {
+    ROS_INFO("Arming request sent successfully, arm: %d", arm);
+  }
+  else
+  {
+    ROS_ERROR("Failed to send arming request");
+  }
+
 };
 
 void SO3CmdToCrazyflie::odom_callback(const nav_msgs::Odometry::ConstPtr &odom)
@@ -80,6 +124,16 @@ void SO3CmdToCrazyflie::so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr
   // switch on motors
   if(msg->aux.enable_motors)
   {
+    // First try to arm the drone. 
+    if(!armed_)
+    {
+      for(int i=0; i<1; i++)
+      {
+      send_arming_request(true);
+      }
+      armed_ = true;
+    };
+
     // If the crazyflie motors are timed out, we need to send a zero message in order to get them to start
     if(motor_status_ < 3)
     {
@@ -106,6 +160,16 @@ void SO3CmdToCrazyflie::so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr
     crazy_cmd_vel_pub_.publish(motors_vel_cmd);
     last_so3_cmd_ = *msg;
     last_so3_cmd_time_ = msg->header.stamp;
+
+    // Disarm motors
+    if(armed_)
+    {
+      for(int i=0; i<1; i++)
+      {
+      send_arming_request(false);
+      }
+      armed_ = false;
+    };
     return;
   }
 
@@ -214,6 +278,26 @@ void SO3CmdToCrazyflie::onInit(void)
   odom_set_ = false;
   so3_cmd_set_ = false;
   motor_status_ = 0;
+  armed_ = false;
+  arm_status_ = 0;
+
+  // Retrieve mav_name parameter
+  std::string mav_name;
+  if (!priv_nh.getParam("mav_name", mav_name))
+  {
+    ROS_FATAL("mav_name parameter not found.");
+    return;
+  }
+
+  // Construct the full service name
+  std::string service_name = "/" + mav_name + "/send_packet";
+
+  // Arming packet client. 
+  arm_client_ = priv_nh.serviceClient<crazyflie_driver::sendPacket>(service_name);
+
+  ROS_INFO("Waiting for send_packet service...");
+  arm_client_.waitForExistence();
+  ROS_INFO("send_packet service is available.");
 
   // TODO make sure this is publishing to the right place
   crazy_fast_cmd_vel_pub_ = priv_nh.advertise<geometry_msgs::Twist>("cmd_vel_fast", 10);
