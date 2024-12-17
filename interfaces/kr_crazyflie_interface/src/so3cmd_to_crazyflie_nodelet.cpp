@@ -65,23 +65,13 @@ void SO3CmdToCrazyflie::send_arming_request(bool arm)
 {
   ROS_INFO("Setting arm to: %d", arm);
   
-  // Create a packet to arm or disarm
-  // crazyflie_driver::crtpPacket packet;
-  // packet.header = 0x0D;
-  // packet.size = 1;  // Payload length is 1 byte for arm/disarm
-  // // Clear the data array before populating it
-  // std::fill(packet.data.begin(), packet.data.end(), 0);
-  // // Set the payload (1 byte for arm or disarm)
-  // packet.data[0] = arm ? 1 : 0;  // 1 for arm, 0 for disarm
-
   // Create a custom packet for arming/disarming
+  // https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/crtp/crtp_platform/
   crazyflie_driver::crtpPacket packet;
-  packet.header = 220;  // Same as 13 in decimal
-  packet.size = 2;  // Payload length of 2 bytes
-  // Set the first byte of the payload to 1 (indicating the arming/disarming operation)
-  packet.data[0] = 1;
-  // Set the second byte to arm/disarm (1 for arm, 0 for disarm)
-  packet.data[1] = arm ? 1 : 0;
+  packet.header = 220;  // Port 13 but byteshifted following https://github.com/bitcraze/crazyflie-lib-python/blob/master/cflib/crtp/crtpstack.py#L120-L132
+  packet.size = 2;      // Payload length
+  packet.data[0] = 1;   // Channel 0 -- Platform commands
+  packet.data[1] = arm ? 1 : 0;  // Arm message (bool).
 
   // Call the sendPacket service to send the packet
   crazyflie_driver::sendPacket srv;
