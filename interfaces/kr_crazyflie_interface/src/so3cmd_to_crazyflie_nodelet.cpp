@@ -28,6 +28,7 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
 
  private:
   void send_arming_request(bool arm);
+  void reboot();
   void so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr &msg);
   void odom_callback(const nav_msgs::Odometry::ConstPtr &odom);
 
@@ -40,7 +41,7 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
   ros::Subscriber so3_cmd_sub_;
   ros::Subscriber odom_sub_;
 
-  ros::ServiceClient arm_client_;  // Service client to send packets
+  ros::ServiceClient packet_client_;  // Service client to send packets
 
   double so3_cmd_timeout_;
   ros::Time last_so3_cmd_time_;
@@ -77,13 +78,54 @@ void SO3CmdToCrazyflie::send_arming_request(bool arm)
   crazyflie_driver::sendPacket srv;
   srv.request.packet = packet;
 
-  if (arm_client_.call(srv))
+  if (packet_client_.call(srv))
   {
     ROS_INFO("Arming request sent successfully, arm: %d", arm);
   }
   else
   {
     ROS_ERROR("Failed to send arming request");
+  }
+};
+
+void SO3CmdToCrazyflie::reboot()
+{
+  ROS_INFO("Attempting to reboot Crazyflie...");
+  
+  // Create custom packet for rebooting. 
+  crazyflie_driver::crtpPacket packet;
+  packet.header = 255;  // 
+  packet.size = 2;      // Payload length
+  packet.data[0] = 0xFE;  
+  packet.data[1] = 0x02;  // SYSOFF command. 
+
+  // Call the sendPacket service to send the packet
+  crazyflie_driver::sendPacket srv;
+  srv.request.packet = packet;
+
+  if (packet_client_.call(srv))
+  {
+    ROS_INFO("Powering down.");
+  }
+  else
+  {
+    ROS_ERROR("Failed to power down");
+  }
+
+  // Wait a little bit. 
+  ros::Duration(0.5).sleep();  // Sleep for a short time.
+
+  // Now send boot up command. 
+  packet.data[1] = 0x03;        // SYSON command.
+  srv.request.packet = packet;
+
+  if (packet_client_.call(srv))
+  {
+    ROS_INFO("Powering up.");
+  }
+  else
+  {
+    ROS_ERROR("Failed to power up.");
   }
 
 };
@@ -159,6 +201,8 @@ void SO3CmdToCrazyflie::so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr
       send_arming_request(false);
       }
       armed_ = false;
+      // Reboot Crazyflie to be armed again. 
+      reboot();
     };
     return;
   }
@@ -283,10 +327,10 @@ void SO3CmdToCrazyflie::onInit(void)
   std::string service_name = "/" + mav_name + "/send_packet";
 
   // Arming packet client. 
-  arm_client_ = priv_nh.serviceClient<crazyflie_driver::sendPacket>(service_name);
+  packet_client_ = priv_nh.serviceClient<crazyflie_driver::sendPacket>(service_name);
 
   ROS_INFO("Waiting for send_packet service...");
-  arm_client_.waitForExistence();
+  packet_client_.waitForExistence();
   ROS_INFO("send_packet service is available.");
 
   // TODO make sure this is publishing to the right place
