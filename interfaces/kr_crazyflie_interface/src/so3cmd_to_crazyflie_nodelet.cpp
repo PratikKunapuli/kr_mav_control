@@ -57,6 +57,8 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
   int thrust_pwm_min_;  // Necessary to overcome stiction
   int thrust_pwm_max_;  // Mapped to PWM
 
+  bool send_ctbr_cmds_;
+
   int motor_status_;
   bool armed_;
   int arm_status_;
@@ -263,8 +265,13 @@ void SO3CmdToCrazyflie::so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr
   // TODO change this check to be a param
   // throttle the publish rate
   // if ((ros::Time::now() - last_so3_cmd_time_).toSec() > 1.0/30.0){
-  crazy_vel_cmd->linear.y = roll_des + msg->aux.angle_corrections[0];
-  crazy_vel_cmd->linear.x = pitch_des + msg->aux.angle_corrections[1];
+  if (send_ctbr_cmds_) {
+    crazy_vel_cmd->linear.y = msg->angular_velocity.x;  // ctbr_cmd->angular_velocity.x = roll rate
+    crazy_vel_cmd->linear.x = msg->angular_velocity.y;  // ctbr_cmd->angular_velocity.y = pitch rate
+  } else {
+    crazy_vel_cmd->linear.y = roll_des + msg->aux.angle_corrections[0];
+    crazy_vel_cmd->linear.x = pitch_des + msg->aux.angle_corrections[1];
+  }
   crazy_vel_cmd->linear.z = CLAMP(thrust_pwm, thrust_pwm_min_, thrust_pwm_max_);
 
   // ROS_INFO("commanded thrust is %2.2f", CLAMP(thrust_pwm, thrust_pwm_min_, thrust_pwm_max_));
@@ -305,6 +312,9 @@ void SO3CmdToCrazyflie::onInit(void)
 
   // get param for so3 command timeout duration
   priv_nh.param("so3_cmd_timeout", so3_cmd_timeout_, 0.1);
+
+  // get param for sending ctbr cmds, default is to send TRPY commands as attitude
+  priv_nh.param("send_ctbr_cmds", send_ctbr_cmds_, false);
 
   priv_nh.param("thrust_pwm_max", thrust_pwm_max_, 60000);
   priv_nh.param("thrust_pwm_min", thrust_pwm_min_, 10000);
