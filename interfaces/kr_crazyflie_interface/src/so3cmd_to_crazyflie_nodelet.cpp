@@ -58,6 +58,7 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
   int thrust_pwm_max_;  // Mapped to PWM
 
   bool send_ctbr_cmds_;
+  bool is_brushless_;
 
   int motor_status_;
   bool armed_;
@@ -158,14 +159,18 @@ void SO3CmdToCrazyflie::so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr
   // switch on motors
   if(msg->aux.enable_motors)
   {
-    // First try to arm the drone. 
-    if(!armed_)
-    {
-      for(int i=0; i<1; i++)
+
+    // First try to arm the drone.
+    if(is_brushless_) // Only do so if CF is brushless (rosparam)
+    { 
+      if(!armed_)
       {
-      send_arming_request(true);
-      }
-      armed_ = true;
+        for(int i=0; i<1; i++)
+        {
+        send_arming_request(true);
+        }
+        armed_ = true;
+      };
     };
 
     // If the crazyflie motors are timed out, we need to send a zero message in order to get them to start
@@ -196,15 +201,18 @@ void SO3CmdToCrazyflie::so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr
     last_so3_cmd_time_ = msg->header.stamp;
 
     // Disarm motors
-    if(armed_)
+    if(is_brushless_)
     {
-      for(int i=0; i<1; i++)
+      if(armed_)
       {
-      send_arming_request(false);
-      }
-      armed_ = false;
-      // Reboot Crazyflie to be armed again. 
-      reboot();
+        for(int i=0; i<1; i++)
+        {
+        send_arming_request(false);
+        }
+        armed_ = false;
+        // Reboot Crazyflie to be armed again. 
+        reboot();
+      };
     };
     return;
   }
@@ -312,6 +320,9 @@ void SO3CmdToCrazyflie::onInit(void)
 
   // get param for so3 command timeout duration
   priv_nh.param("so3_cmd_timeout", so3_cmd_timeout_, 0.1);
+
+  // get param for whether or not the crazyflie is of type brushless.
+  priv_nh.param("is_brushless", is_brushless_, false);
 
   // get param for sending ctbr cmds, default is to send TRPY commands as attitude
   priv_nh.param("send_ctbr_cmds", send_ctbr_cmds_, false);
