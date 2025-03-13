@@ -15,6 +15,7 @@
 #include <crazyflie_driver/crtpPacket.h>  // Message definition for crtpPacket
 
 #include <Eigen/Geometry>
+#include <Eigen/Dense>
 
 // TODO: Remove CLAMP as macro
 #define CLAMP(x, min, max) ((x) < (min)) ? (min) : ((x) > (max)) ? (max) : (x)
@@ -33,7 +34,11 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
   void odom_callback(const nav_msgs::Odometry::ConstPtr &odom);
 
   bool odom_set_, so3_cmd_set_;
+  ros::Time last_odom_time_;
   Eigen::Quaterniond q_odom_;
+  Eigen::Vector3d w_odom_;
+  Eigen::Vector3d w_odom_last;
+  Eigen::Vector3d w_dot_odom_;
 
   ros::Publisher attitude_raw_pub_;
   ros::Publisher crazy_fast_cmd_vel_pub_, crazy_cmd_vel_pub_;
@@ -50,6 +55,7 @@ class SO3CmdToCrazyflie : public nodelet::Nodelet
   double c1_;
   double c2_;
   double c3_;
+  double ang_acc_d_gain;
 
   // TODO get rid of this for the gains coming in
   double kp_yaw_rate_;
@@ -135,11 +141,41 @@ void SO3CmdToCrazyflie::reboot()
 
 void SO3CmdToCrazyflie::odom_callback(const nav_msgs::Odometry::ConstPtr &odom)
 {
+  ros::Time current_time = odom->header.stamp;
+  // Extract current angular velocity
+  Eigen::Vector3d w_odom_current(odom->twist.twist.angular.x, 
+    odom->twist.twist.angular.y, 
+    odom->twist.twist.angular.z);
+
   if(!odom_set_)
+  {
+    // First time receiving odometry
     odom_set_ = true;
+    w_odom_last = w_odom_current;
+    last_odom_time_ = current_time;
+    w_dot_odom_ = Eigen::Vector3d::Zero(); // Initialize with zero acceleration
+  }
+  else
+  {
+    // Calculate time delta
+    double dt = (current_time - last_odom_time_).toSec();
+
+    // Avoid division by zero or very small dt
+    if(dt > 1e-6)
+    {
+      // Compute angular acceleration using finite differencing
+      w_dot_odom_ = (w_odom_current - w_odom_last) / dt;
+
+      // Update last values for next iteration
+      w_odom_last = w_odom_current;
+      last_odom_time_ = current_time;
+    }
+  }
 
   q_odom_ = Eigen::Quaterniond(odom->pose.pose.orientation.w, odom->pose.pose.orientation.x,
                                odom->pose.pose.orientation.y, odom->pose.pose.orientation.z);
+
+  w_odom_ = w_odom_current;
 
   if(so3_cmd_set_ && ((ros::Time::now() - last_so3_cmd_time_).toSec() >= so3_cmd_timeout_))
   {
@@ -274,8 +310,32 @@ void SO3CmdToCrazyflie::so3_cmd_callback(const kr_mav_msgs::SO3Command::ConstPtr
   // throttle the publish rate
   // if ((ros::Time::now() - last_so3_cmd_time_).toSec() > 1.0/30.0){
   if (send_ctbr_cmds_) {
-    crazy_vel_cmd->linear.y = msg->angular_velocity.x;  // ctbr_cmd->angular_velocity.x = roll rate
-    crazy_vel_cmd->linear.x = msg->angular_velocity.y;  // ctbr_cmd->angular_velocity.y = pitch rate
+    // float roll_rate_des = (msg->kOm[0] * (msg->angular_velocity.x - w_odom_[0])) * 180/M_PI;
+    // float pitch_rate_des = (msg->kOm[1] * (msg->angular_velocity.y - w_odom_[1])) * 180/M_PI;
+    // crazy_vel_cmd->linear.y = roll_rate_des;  // ctbr_cmd->angular_velocity.x = roll rate
+    // crazy_vel_cmd->linear.x = pitch_rate_des;  // ctbr_cmd->angular_velocity.y = pitch rate
+
+    // Get P terms from angular velocity error
+    float roll_rate_p = msg->kOm[0] * (msg->angular_velocity.x - w_odom_[0]);
+    float pitch_rate_p = msg->kOm[1] * (msg->angular_velocity.y - w_odom_[1]);
+    
+    // Get D terms from angular acceleration (optional kD gains could be added as parameters)
+    float roll_rate_d = ang_acc_d_gain * w_dot_odom_[0];  // Adjust gain as needed
+    float pitch_rate_d = ang_acc_d_gain * w_dot_odom_[1]; // Adjust gain as needed
+    
+    // Combine P and D terms to get desired body rates (in degrees/sec)
+    float roll_rate_des = (roll_rate_p - roll_rate_d) * (180.0/M_PI);
+    float pitch_rate_des = (pitch_rate_p - pitch_rate_d) * (180.0/M_PI);
+    
+    // Send the commands
+    crazy_vel_cmd->linear.y = roll_rate_des;
+    crazy_vel_cmd->linear.x = pitch_rate_des;
+
+    // Working 
+    // crazy_vel_cmd->linear.y = msg->angular_velocity.x;  // ctbr_cmd->angular_velocity.x = roll rate
+    // crazy_vel_cmd->linear.x = msg->angular_velocity.y;  // ctbr_cmd->angular_velocity.y = pitch rate
+
+
   } else {
     crazy_vel_cmd->linear.y = roll_des + msg->aux.angle_corrections[0];
     crazy_vel_cmd->linear.x = pitch_des + msg->aux.angle_corrections[1];
@@ -317,6 +377,11 @@ void SO3CmdToCrazyflie::onInit(void)
     ROS_INFO("Using %2.2f, %2.2f, %2.2f for thrust mapping", c1_, c2_, c3_);
   else
     ROS_FATAL("Must set coefficients for thrust scaling");
+
+  if(priv_nh.getParam("ang_acc_d_gain", ang_acc_d_gain))
+    ROS_INFO("Using %2.2f for angular acceleration D gain", ang_acc_d_gain);
+  else
+    ROS_FATAL("Must set angular acceleration D gain");
 
   // get param for so3 command timeout duration
   priv_nh.param("so3_cmd_timeout", so3_cmd_timeout_, 0.1);
